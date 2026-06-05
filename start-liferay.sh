@@ -5,7 +5,7 @@
 # stored config matches the running ports — useful for parallel bundles.
 #
 # Usage:
-#   start-liferay.sh                              # uses BUNDLE default below
+#   start-liferay.sh                              # uses BUNDLE_DEFAULT from start-liferay.conf
 #   start-liferay.sh /path/to/bundle              # explicit bundle path
 #   start-liferay.sh --debug                      # default bundle, debug mode
 #   start-liferay.sh --debug /path/to/bundle      # explicit bundle, debug mode
@@ -39,25 +39,41 @@
 # (and skip the prompt, e.g. together with --yes).
 #
 # JDK selection: by default the script picks a JDK based on the bundle name
-# (Liferay version family) using JDK_BY_FAMILY below. Override per-run with
-# --jdk <path> or by exporting JAVA_HOME before invoking the script.
+# (Liferay version family) from the JDK_* paths in start-liferay.conf.
+# Override per-run with --jdk <path> or by exporting JAVA_HOME before
+# invoking the script.
+#
+# Configuration: machine-specific settings (bundle locations, default bundle,
+# JDK paths) live in start-liferay.conf next to this script. The file is
+# gitignored; copy start-liferay.conf.example to create yours.
 
 set -euo pipefail
 
-# Directories that hold your Liferay bundles. Edit these for your machine; add
-# as many as you like (e.g. a second one on an external drive).
-BUNDLES_DIRS=(
-	"${HOME}/liferay/bundles"
-	# "/mnt/data/liferay/bundles"
-)
-BUNDLE_DEFAULT="${BUNDLES_DIRS[0]}/liferay-bundle-master"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# JDK roots on this machine, one per Liferay version family. Point these at your
-# own JDK installs. The mapping from bundle name to JDK lives in choose_jdk().
-JDK_8="${HOME}/liferay/tools/jvm/jdk-8"
-JDK_11="${HOME}/liferay/tools/jvm/jdk-11"
-JDK_17="${HOME}/liferay/tools/jvm/jdk-17"
-JDK_21="${HOME}/liferay/tools/jvm/jdk-21"
+# Machine-specific defaults. Override them in start-liferay.conf next to this
+# script (gitignored — copy start-liferay.conf.example to get started).
+BUNDLES_DIRS=(
+	"$HOME/liferay/bundles"
+)
+BUNDLE_DEFAULT=""
+
+# Path to the JDK roots on this machine. Set them in start-liferay.conf.
+JDK_8=""
+JDK_11=""
+JDK_17=""
+JDK_21=""
+
+CONF_FILE="$SCRIPT_DIR/start-liferay.conf"
+if [ -f "$CONF_FILE" ]; then
+	# shellcheck source=start-liferay.conf.example
+	. "$CONF_FILE"
+else
+	echo "Note: no $CONF_FILE — using built-in defaults." >&2
+	echo "      Copy start-liferay.conf.example to start-liferay.conf to configure bundle and JDK locations." >&2
+fi
+
+BUNDLE_DEFAULT="${BUNDLE_DEFAULT:-${BUNDLES_DIRS[0]}/liferay-bundle-master}"
 
 DEBUG=0
 PICK=0
@@ -431,27 +447,64 @@ if [ "$CLEAN" = "1" ]; then
 	clean_bundle
 fi
 
-# Drop in the Elasticsearch configuration if the bundle's osgi/configs
-# directory exists and doesn't already have one. The source file is expected
-# to live next to this script; if it's missing we just skip silently.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ELASTIC_SOURCE="$SCRIPT_DIR/com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.config"
+# Drop in the Elasticsearch configuration (sidecarHttpPort="AUTO", needed so
+# parallel bundles don't fight over the sidecar port) if the bundle's
+# osgi/configs directory exists and doesn't already have one. The source files
+# are expected to live next to this script; if they're missing we just skip
+# silently.
+#
+# The PID must match the Elasticsearch module the bundle ships. Older bundles
+# carry com.liferay.portal.search.elasticsearch7.impl.jar; newer ones (master,
+# 2025.q1+) carry elasticsearch8. On an ES8 bundle the ES7 PID is only read by
+# a one-shot migration upgrade step, so injecting the ES7 file there
+# re-triggers that migration on every start and races the search components
+# into "Elasticsearch connection not found" errors during startup — remove a
+# previously injected ES7 copy and install the ES8 file instead.
+ELASTIC_SOURCE_ES7="$SCRIPT_DIR/com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.config"
+ELASTIC_SOURCE_ES8="$SCRIPT_DIR/com.liferay.portal.search.elasticsearch8.configuration.ElasticsearchConfiguration.config"
 ELASTIC_TARGET_DIR=""
-for candidate in "$BUNDLE/osgi/configs" "$BUNDLE/liferay-dxp/osgi/configs"; do
+LIFERAY_OSGI_DIR=""
+for candidate in "$BUNDLE/osgi" "$BUNDLE/liferay-dxp/osgi"; do
+	# The configs subdirectory may not exist yet on a fresh bundle — the
+	# portal only creates it on first boot. Create it ourselves so the config
+	# lands before that first boot instead of being skipped.
 	if [ -d "$candidate" ]; then
-		ELASTIC_TARGET_DIR="$candidate"
+		LIFERAY_OSGI_DIR="$candidate"
+		ELASTIC_TARGET_DIR="$candidate/configs"
+		mkdir -p "$ELASTIC_TARGET_DIR"
 		break
 	fi
 done
 
-if [ -n "$ELASTIC_TARGET_DIR" ] && [ -f "$ELASTIC_SOURCE" ]; then
-	ELASTIC_TARGET="$ELASTIC_TARGET_DIR/$(basename "$ELASTIC_SOURCE")"
+bundle_has_elasticsearch7() {
+	compgen -G "$LIFERAY_OSGI_DIR/portal/com.liferay.portal.search.elasticsearch7.impl.jar" >/dev/null 2>&1 ||
+		compgen -G "$LIFERAY_OSGI_DIR/modules/com.liferay.portal.search.elasticsearch7.impl.jar" >/dev/null 2>&1
+}
 
-	if [ ! -f "$ELASTIC_TARGET" ]; then
-		cp "$ELASTIC_SOURCE" "$ELASTIC_TARGET"
-		echo "Elasticsearch config installed: $ELASTIC_TARGET"
+if [ -n "$ELASTIC_TARGET_DIR" ]; then
+	if bundle_has_elasticsearch7; then
+		ELASTIC_SOURCE="$ELASTIC_SOURCE_ES7"
 	else
-		echo "Elasticsearch config already present at $ELASTIC_TARGET — leaving as-is."
+		ELASTIC_SOURCE="$ELASTIC_SOURCE_ES8"
+
+		# A leftover ES7 config on an ES8 bundle causes the startup noise
+		# described above — drop it before installing the right one.
+		ELASTIC_STALE="$ELASTIC_TARGET_DIR/$(basename "$ELASTIC_SOURCE_ES7")"
+		if [ -f "$ELASTIC_STALE" ]; then
+			rm "$ELASTIC_STALE"
+			echo "Stale Elasticsearch 7 config removed (bundle uses Elasticsearch 8): $ELASTIC_STALE"
+		fi
+	fi
+
+	if [ -f "$ELASTIC_SOURCE" ]; then
+		ELASTIC_TARGET="$ELASTIC_TARGET_DIR/$(basename "$ELASTIC_SOURCE")"
+
+		if [ ! -f "$ELASTIC_TARGET" ]; then
+			cp "$ELASTIC_SOURCE" "$ELASTIC_TARGET"
+			echo "Elasticsearch config installed: $ELASTIC_TARGET"
+		else
+			echo "Elasticsearch config already present at $ELASTIC_TARGET — leaving as-is."
+		fi
 	fi
 	echo
 fi
@@ -461,6 +514,7 @@ SHUTDOWN_DEFAULT=8005
 AJP_DEFAULT=8009
 HTTPS_DEFAULT=8443
 JPDA_DEFAULT=8000
+OSGI_CONSOLE_DEFAULT=11311
 
 is_port_free() {
 	local port=$1
@@ -502,6 +556,14 @@ if [ "$DEBUG" = "1" ]; then
 	JPDA_PORT=$(choose_port "$JPDA_DEFAULT")
 fi
 
+# Developer mode (portal-developer.properties) opens the OSGi Gogo telnet
+# console on module.framework.properties.osgi.console=localhost:11311. A
+# second bundle would fail to bind it ("Port 11311 already in use"), so pick a
+# free port and override the portal property through Liferay's env-var
+# mechanism. Harmless on bundles that don't run in developer mode.
+OSGI_CONSOLE_PORT=$(choose_port "$OSGI_CONSOLE_DEFAULT")
+export LIFERAY_MODULE_PERIOD_FRAMEWORK_PERIOD_PROPERTIES_PERIOD_OSGI_PERIOD_CONSOLE="localhost:$OSGI_CONSOLE_PORT"
+
 print_port() {
 	local label=$1
 	local resolved=$2
@@ -518,6 +580,7 @@ print_port "HTTP" "$HTTP_PORT" "$HTTP_DEFAULT"
 print_port "SHUTDOWN" "$SHUTDOWN_PORT" "$SHUTDOWN_DEFAULT"
 print_port "AJP" "$AJP_PORT" "$AJP_DEFAULT"
 print_port "HTTPS" "$HTTPS_PORT" "$HTTPS_DEFAULT"
+print_port "OSGI" "$OSGI_CONSOLE_PORT" "$OSGI_CONSOLE_DEFAULT"
 if [ -n "$JPDA_PORT" ]; then
 	print_port "JPDA" "$JPDA_PORT" "$JPDA_DEFAULT"
 fi
@@ -641,9 +704,13 @@ if [ "$DEBUG" = "1" ]; then
 	# Bind the JPDA listener to all interfaces (the asterisk) so a remote
 	# debugger can attach. Suspend=n means the JVM doesn't wait for a
 	# debugger before continuing startup.
-	export JPDA_ADDRESS="*:$JPDA_PORT"
-	export JPDA_TRANSPORT="dt_socket"
-	export JPDA_SUSPEND="n"
+	#
+	# Export the full JPDA_OPTS rather than JPDA_ADDRESS: catalina.sh sources
+	# the bundle's setenv.sh after our environment, and Liferay setenv.sh
+	# files hardcode JPDA_ADDRESS="8000" — which would override our chosen
+	# port and collide with an already-running bundle. catalina.sh leaves a
+	# non-empty JPDA_OPTS untouched.
+	export JPDA_OPTS="-agentlib:jdwp=transport=dt_socket,address=*:$JPDA_PORT,server=y,suspend=n"
 
 	echo "  Debug attach   : localhost:$JPDA_PORT (transport=dt_socket, suspend=n)"
 	echo

@@ -1,0 +1,25 @@
+# Machine-specific configuration for start-liferay.sh.
+#
+# Copy this file to start-liferay.conf (same directory as the script) and
+# adjust the paths. The file is sourced as a bash script, so any bash syntax
+# works. start-liferay.conf is gitignored — your local paths stay out of the
+# repository.
+
+# Directories that contain Liferay bundles. --pick scans all of them; missing
+# directories are silently skipped.
+BUNDLES_DIRS=(
+	"$HOME/liferay/bundles"
+)
+
+# Bundle to start when no path is given on the command line. Defaults to
+# "${BUNDLES_DIRS[0]}/liferay-bundle-master" when left empty.
+BUNDLE_DEFAULT=""
+
+# JDK roots, by major version. The script picks one based on the bundle name
+# (Liferay version family): 6.x/7.0/7.1 -> JDK_8, 7.2-7.4/2023/2024 -> JDK_11,
+# 2025+/master -> JDK_17. Leave a version empty if you never start bundles of
+# that family; --jdk <path> or an exported JAVA_HOME always wins.
+JDK_8=""
+JDK_11=""
+JDK_17=""
+JDK_21=""
