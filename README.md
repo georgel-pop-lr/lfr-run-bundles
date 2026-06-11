@@ -10,9 +10,11 @@ one without manually editing `server.xml` or hunting for a free port.
 | File | Purpose |
 |---|---|
 | `start-liferay.sh` | Launches a bundle with auto-port selection. Modifies `tomcat/conf/server.xml` in place if any default port is busy, after backing it up. |
-| `com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.config` | Embedded-Elasticsearch configuration. The launcher copies this into the bundle's `osgi/configs/` directory on first run, so search works out of the box without an external Elasticsearch server. |
+| `com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.config` | Embedded-Elasticsearch configuration for ES7-era bundles. Copied into the bundle's `osgi/configs/` directory on first run, so search works out of the box without an external Elasticsearch server. |
+| `com.liferay.portal.search.elasticsearch8.configuration.ElasticsearchConfiguration.config` | Same, for ES8-era bundles. The launcher picks the right one based on the bundle's Elasticsearch sidecar version. |
+| `start-liferay.conf` | Machine-specific config (bundle roots and JDK paths). Gitignored — yours alone. |
 
-Both files are referenced relative to the script, so as long as they sit
+The config files are referenced relative to the script, so as long as they sit
 together you can move the folder freely.
 
 ## Setup
@@ -24,11 +26,12 @@ together you can move the folder freely.
    cd lfr-run-bundles
    ```
 
-2. Edit the config block at the top of `start-liferay.sh` for your machine:
+2. Create your machine config by copying the tracked example, then edit it
+   (see [Configuration](#configuration) for the keys):
 
-   - `BUNDLES_DIRS` — the directories that hold your Liferay bundles (one or more).
-   - `BUNDLE_DEFAULT` — the bundle used when you run the script with no argument.
-   - `JDK_8` / `JDK_11` / `JDK_17` / `JDK_21` — point these at your JDK install roots.
+   ```bash
+   cp start-liferay.conf.example start-liferay.conf
+   ```
 
 3. (Optional) Add an alias so you can call it from anywhere:
 
@@ -42,54 +45,63 @@ together you can move the folder freely.
    recreate the database. `docker` is optional and only used as a fallback when
    the database runs inside a container.
 
+## Configuration
+
+Machine-specific paths live in `start-liferay.conf`, next to the script. It is
+**gitignored**, so your local paths never enter the repository — copy the
+tracked `start-liferay.conf.example` to create it. The file is sourced as a
+bash script, so any bash syntax works; when it is missing the launcher falls
+back to built-in defaults and prints a hint.
+
+| Key | Purpose |
+|---|---|
+| `BUNDLES_DIRS` | Array of directories that hold your Liferay bundles. The picker scans all of them; missing directories are silently skipped. |
+| `JDK_8` / `JDK_11` / `JDK_17` / `JDK_21` | JDK roots by major version. The launcher picks one from the bundle name (see [JDK selection](#jdk-selection-older-bundles-need-older-jdks)); leave a version empty if you never run that family. |
+| `BUNDLE_DEFAULT` | Optional. A fallback bundle path — largely vestigial now that a bare invocation opens the picker; leave it empty. |
+
+Example:
+
+```bash
+BUNDLES_DIRS=(
+	"$HOME/liferay/bundles"
+	"/media/$USER/Data/liferay/bundles"
+)
+
+JDK_8="$HOME/liferay/tools/jvm/jdk1.8.0_251"
+JDK_11="$HOME/liferay/tools/jvm/jdk-11.0.22"
+JDK_17="$HOME/liferay/tools/jvm/zulu17.x"
+JDK_21="$HOME/liferay/tools/jvm/msopenjdk-21-amd64"
+```
+
 ## Usage
 
-### Run the default bundle
+### Pick a bundle interactively (default)
 
-The script has a default bundle path baked in:
-
-```bash
-${HOME}/liferay/tools/lfr-run-bundles/start-liferay.sh
-```
-
-The default points at:
-
-```
-${HOME}/liferay/bundles/liferay-dxp-tomcat-2025.q1.14-lts-1748919610
-```
-
-Edit `BUNDLE_DEFAULT` near the top of `start-liferay.sh` if you want a
-different default.
-
-### Pick a bundle interactively
-
-Pass `--pick` to list every Liferay-looking bundle across the directories
-configured in `BUNDLES_DIRS` at the top of `start-liferay.sh` and select one
-by number:
+With no bundle path, the launcher opens an interactive picker over every
+Liferay-looking bundle across the directories configured in `BUNDLES_DIRS`. It
+shows each bundle's parent directory, so bundles that share a name across
+locations stay distinguishable:
 
 ```bash
-lfrRunBundle --pick
-lfrRunBundle --pick --debug          # combine with debug mode
+lfrRunBundle                 # picker
+lfrRunBundle --pick          # same thing, forced explicitly
+lfrRunBundle --debug         # picker, then debug mode
 ```
 
-Sample output:
+When [`fzf`](https://github.com/junegunn/fzf) is installed it drives a fuzzy
+picker (type to filter, `Enter` to choose); otherwise the launcher falls back
+to a numbered menu:
 
 ```
-Available bundles in ${HOME}/liferay/bundles:
-
- 1) ${HOME}/liferay/bundles/liferay-dxp-7.3.10.u26
- 2) ${HOME}/liferay/bundles/liferay-dxp-7.3.10.u27
- 3) ${HOME}/liferay/bundles/liferay-dxp-tomcat-2025.q1.14-lts-1748919610
- ...
-
-Pick a bundle (number, or Ctrl+C to abort):
+bundle> master
+  liferay-bundle-master  (/home/georgelpop/liferay/bundles)
+  liferay-bundle-master  (/media/georgelpop/Data/liferay/bundles)
 ```
 
-The script only lists directories that actually contain a Tomcat folder
+The launcher only lists directories that actually contain a Tomcat folder
 (top-level `tomcat/`/`tomcat-9.x.y/` or nested `liferay-dxp/tomcat/`), so
-half-extracted or non-Liferay folders are skipped. Type the number, hit
-Enter, and the selected bundle goes through the same port-resolution and
-launch path as a manually-passed argument.
+half-extracted or non-Liferay folders are skipped. The selected bundle goes
+through the same port-resolution and launch path as a manually-passed argument.
 
 `--list` is accepted as an alias for `--pick`.
 
@@ -124,16 +136,19 @@ IntelliJ / Eclipse / VS Code can attach to it:
 ```
 
 JPDA listens on port `8000` by default. If `8000` is already taken, the
-script bumps to the next free port — same behaviour as the other Tomcat
-ports — and prints the resolved value:
+script bumps to the next free port — same behaviour as the other ports — and
+prints the resolved value:
 
 ```
 Selected ports:
-  HTTP      8080
-  SHUTDOWN  8005
-  AJP       8009
-  HTTPS     8443
-  JPDA      8000
+  HTTP       8080
+  SHUTDOWN   8005
+  AJP        8009
+  HTTPS      8443
+  OSGI       11311
+  ARQUILLIAN 32763
+  DATAGUARD  42763
+  JPDA       8000
 
 Starting Liferay (Ctrl+C to stop).
   Editor / portal: http://localhost:8080/
@@ -209,17 +224,26 @@ Starting Liferay (Ctrl+C to stop).
   JDK            : /home/.../jdk-11.0.22 (auto-detected for liferay-dxp-7.3.10.u27)
 ```
 
-### Clean start (reset the database and runtime state)
+### Clean start
 
-Pass `--clean` (or `-c`) to wipe the bundle's runtime state and reset its
-database before starting — handy when you want a fresh install:
+There are two levels of clean, both prompting for confirmation (skip with
+`--yes` / `-y`):
+
+| Flag | What it does |
+|---|---|
+| `--clean` / `-c` | **Full wipe** — resets the database and deletes all runtime state. Use for a fresh install. |
+| `--clean-cache` / `-cc` | **Caches only** — clears the OSGi state and work/temp, keeps everything else. Use when modules or JSPs are stale but you want to keep your data. |
+
+When both are given, `--clean` wins.
+
+#### Full clean (`--clean`)
 
 ```bash
-lfrRunBundle --pick --clean
-lfrRunBundle --clean --yes        # skip the confirmation prompt
+lfrRunBundle --clean
+lfrRunBundle --clean --yes         # skip the confirmation prompt
 ```
 
-After a confirmation prompt it:
+After confirmation it:
 
 - **resets the database** read from the bundle's `portal-ext.properties`
   (`jdbc.default.url` / `username` / `password`) — drops and recreates it, for
@@ -230,6 +254,17 @@ After a confirmation prompt it:
 The database is reset **before** any folder is deleted, so a failed reset
 aborts with nothing removed. Stop the bundle first, or the drop fails on active
 connections.
+
+#### Cache clean (`--clean-cache`)
+
+```bash
+lfrRunBundle --clean-cache
+```
+
+The light version: it removes only `osgi/state`, `work`, and the Tomcat
+`work` / `temp` directories, so the next boot rebuilds the module cache and
+recompiles JSPs. It **keeps** `data`, `logs`, the search index, and the
+database — no database connection is touched.
 
 **Docker databases.** A containerized database that publishes its port to the
 host is reset through the normal path. If the database is only reachable inside
@@ -256,11 +291,15 @@ processes are left behind.
 2. **Copies the Elasticsearch config** into `<bundle>/.../osgi/configs/`,
    but only if a file with the same name doesn't already exist there. So
    you can edit the deployed config and re-run without losing your changes.
-3. **Probes 4 Tomcat ports** — `8080` (HTTP), `8005` (shutdown), `8009`
-   (AJP), `8443` (HTTPS) — using `ss`, `lsof` or `netstat` (whichever is
-   available on the system). Picks the next free port if any default is
-   busy. Avoids self-collisions when bumping (e.g. won't pick `8081`
-   for HTTP and again for shutdown).
+3. **Probes the service ports** — HTTP `8080`, shutdown `8005`, AJP `8009`,
+   HTTPS `8443`, the OSGi console `11311`, and the Arquillian `32763` /
+   DataGuard `42763` test connectors (plus JPDA `8000` in debug mode) — using
+   `ss`, `lsof` or `netstat` (whichever is available on the system). Picks the
+   next free port if any default is busy. Avoids self-collisions when bumping
+   (e.g. won't pick `8081` for HTTP and again for shutdown). The Arquillian and
+   DataGuard connectors bind fixed ports and `System.exit` the whole JVM on a
+   clash, so their resolved ports are pinned through `osgi/configs/*.config`
+   files (rewritten each run) — this is what lets two bundles run at once.
 4. **Backs up `tomcat/conf/server.xml`** to
    `server.xml.bak.<yyyymmdd-hhmmss>` and rewrites the connector ports —
    only when at least one port differs from what's already in the file.
@@ -277,10 +316,13 @@ Tomcat : .../liferay-dxp/tomcat
 Elasticsearch config installed: .../osgi/configs/com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.config
 
 Selected ports:
-  HTTP      8080
-  SHUTDOWN  8005
-  AJP       8009
-  HTTPS     8443
+  HTTP       8080
+  SHUTDOWN   8005
+  AJP        8009
+  HTTPS      8443
+  OSGI       11311
+  ARQUILLIAN 32763
+  DATAGUARD  42763
 
 Starting Liferay (Ctrl+C to stop).
   Editor / portal: http://localhost:8080/
@@ -291,10 +333,13 @@ Starting Liferay (Ctrl+C to stop).
 
 ```
 Selected ports:
-  HTTP      8081   (default 8080 was busy)
-  SHUTDOWN  8006   (default 8005 was busy)
-  AJP       8009
-  HTTPS     8443
+  HTTP       8081   (default 8080 was busy)
+  SHUTDOWN   8006   (default 8005 was busy)
+  AJP        8009
+  HTTPS      8443
+  OSGI       11311
+  ARQUILLIAN 32763
+  DATAGUARD  42763
 
 server.xml backed up to .../server.xml.bak.20260505-113412
 server.xml updated.
