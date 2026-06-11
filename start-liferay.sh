@@ -515,6 +515,8 @@ AJP_DEFAULT=8009
 HTTPS_DEFAULT=8443
 JPDA_DEFAULT=8000
 OSGI_CONSOLE_DEFAULT=11311
+ARQUILLIAN_DEFAULT=32763
+DATA_GUARD_DEFAULT=42763
 
 is_port_free() {
 	local port=$1
@@ -564,14 +566,40 @@ fi
 OSGI_CONSOLE_PORT=$(choose_port "$OSGI_CONSOLE_DEFAULT")
 export LIFERAY_MODULE_PERIOD_FRAMEWORK_PERIOD_PROPERTIES_PERIOD_OSGI_PERIOD_CONSOLE="localhost:$OSGI_CONSOLE_PORT"
 
+# The Arquillian and DataGuard test connectors ship in osgi/modules, so they
+# start on every boot — not only under test — and each binds a FIXED port
+# (32763 and 42763). Unlike a Tomcat port clash, a bind failure here is fatal:
+# the connector logs "Shutting down now." and calls System.exit(-10), taking the
+# whole portal JVM down — so a second bundle on the same host kills itself (or
+# its neighbor) on startup. Pick free ports and pin each through its component's
+# OSGi config; these are ConfigAdmin component properties, so a .config file is
+# the only way to override them (no framework or env-var equivalent). Rewritten
+# every run so a standalone start falls back to the defaults the test harness
+# expects on the client side (liferay.arquillian.port, default 32763).
+ARQUILLIAN_PORT=$(choose_port "$ARQUILLIAN_DEFAULT")
+DATA_GUARD_PORT=$(choose_port "$DATA_GUARD_DEFAULT")
+
+write_port_config() {
+	local pid=$1
+	local port=$2
+	[ -n "$ELASTIC_TARGET_DIR" ] || return 0
+	printf 'port="%s"\n' "$port" >"$ELASTIC_TARGET_DIR/$pid.config"
+}
+
+write_port_config \
+	"com.liferay.arquillian.extension.junit.bridge.connector.ArquillianConnector" \
+	"$ARQUILLIAN_PORT"
+write_port_config \
+	"com.liferay.data.guard.connector.DataGuardConnector" "$DATA_GUARD_PORT"
+
 print_port() {
 	local label=$1
 	local resolved=$2
 	local default=$3
 	if [ "$resolved" = "$default" ]; then
-		printf "  %-9s %s\n" "$label" "$resolved"
+		printf "  %-10s %s\n" "$label" "$resolved"
 	else
-		printf "  %-9s %s   (default %s was busy)\n" "$label" "$resolved" "$default"
+		printf "  %-10s %s   (default %s was busy)\n" "$label" "$resolved" "$default"
 	fi
 }
 
@@ -581,6 +609,8 @@ print_port "SHUTDOWN" "$SHUTDOWN_PORT" "$SHUTDOWN_DEFAULT"
 print_port "AJP" "$AJP_PORT" "$AJP_DEFAULT"
 print_port "HTTPS" "$HTTPS_PORT" "$HTTPS_DEFAULT"
 print_port "OSGI" "$OSGI_CONSOLE_PORT" "$OSGI_CONSOLE_DEFAULT"
+print_port "ARQUILLIAN" "$ARQUILLIAN_PORT" "$ARQUILLIAN_DEFAULT"
+print_port "DATAGUARD" "$DATA_GUARD_PORT" "$DATA_GUARD_DEFAULT"
 if [ -n "$JPDA_PORT" ]; then
 	print_port "JPDA" "$JPDA_PORT" "$JPDA_DEFAULT"
 fi
