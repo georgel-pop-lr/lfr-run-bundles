@@ -1,0 +1,8 @@
+# LfrGit per-user config. Copy to lfr-git.local.conf and set your team's fork.
+# lfr-git.local.conf is gitignored, so your team setting stays local.
+
+# Your team's fork org on GitHub. lfrGitSync / lfrGitSyncEE sync upstream into it.
+LFR_GIT_FORK_ORG="your-team-fork-org"
+
+# Upstream org to sync from (default: liferay).
+LFR_GIT_UPSTREAM_ORG="liferay"

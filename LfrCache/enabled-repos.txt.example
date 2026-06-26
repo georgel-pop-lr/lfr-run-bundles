@@ -1,0 +1,7 @@
+# LfrCache registry. Copy to enabled-repos.txt (gitignored), or just run
+# `lfrCache on <repo>` which manages it for you. One absolute repo or worktree
+# root path per line. Lines starting with # are ignored.
+#
+# Example:
+# /home/me/liferay/repos/liferay-portal
+# /home/me/liferay/repos/liferay-portal-7.4.x

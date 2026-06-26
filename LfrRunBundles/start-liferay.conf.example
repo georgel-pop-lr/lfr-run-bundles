@@ -23,3 +23,8 @@ JDK_8=""
 JDK_11=""
 JDK_17=""
 JDK_21=""
+
+# Debug suspend default. In --debug mode, "y" makes the JVM wait for a debugger
+# to attach before startup continues; "n" (the default) starts without waiting.
+# The --suspend flag forces "y" for a single run.
+JPDA_SUSPEND="n"

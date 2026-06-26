@@ -1,6 +1,12 @@
-*.bak
-*.bak.*
+# OS / editor
 .DS_Store
 *.swp
-start-liferay.conf
+*.bak
+*.bak.*
 .idea/
+
+# Per-user config (machine-specific; not shared). Each has a committed .example.
+LfrRepo/lfr-repo.local.conf
+LfrCache/enabled-repos.txt
+LfrGit/lfr-git.local.conf
+LfrRunBundles/start-liferay.conf

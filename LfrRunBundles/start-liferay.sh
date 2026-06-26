@@ -9,6 +9,7 @@
 #   start-liferay.sh /path/to/bundle              # explicit bundle path, skips the picker
 #   start-liferay.sh --debug                      # picker, then debug mode
 #   start-liferay.sh --debug /path/to/bundle      # explicit bundle, debug mode
+#   start-liferay.sh --suspend                    # debug mode, wait for the debugger to attach
 #   start-liferay.sh --pick                       # force the picker (same as no argument)
 #   start-liferay.sh --jdk /path/to/jdk           # override the JDK
 #   start-liferay.sh --clean                      # picker, then wipe state + reset DB
@@ -18,7 +19,9 @@
 #
 # DEBUG mode runs Tomcat via 'catalina.sh jpda run' so a remote debugger can
 # attach. The JPDA port defaults to 8000, with the same auto-bump behaviour as
-# the other ports if it's already in use.
+# the other ports if it's already in use. --suspend (or JPDA_SUSPEND=y in the
+# conf) makes the JVM wait for the debugger before starting; the default is to
+# start without waiting.
 #
 # The picker lists every Liferay-looking bundle under BUNDLES_DIRS and lets you
 # select one interactively (fzf when available, numbered menu otherwise). It
@@ -83,6 +86,7 @@ fi
 BUNDLE_DEFAULT="${BUNDLE_DEFAULT:-${BUNDLES_DIRS[0]}/liferay-bundle-master}"
 
 DEBUG=0
+JPDA_SUSPEND="${JPDA_SUSPEND:-n}"
 PICK=0
 CLEAN=0
 CLEAN_CACHE=0
@@ -99,6 +103,10 @@ while [ $i -lt ${#args[@]} ]; do
 	case "$arg" in
 		--debug)
 			DEBUG=1
+			;;
+		--suspend)
+			DEBUG=1
+			JPDA_SUSPEND=y
 			;;
 		--pick|--list)
 			PICK=1
@@ -809,17 +817,17 @@ echo "  JDK            : $JDK_PATH $JDK_SOURCE"
 
 if [ "$DEBUG" = "1" ]; then
 	# Bind the JPDA listener to all interfaces (the asterisk) so a remote
-	# debugger can attach. Suspend=n means the JVM doesn't wait for a
-	# debugger before continuing startup.
+	# debugger can attach. JPDA_SUSPEND=y makes the JVM wait for a debugger
+	# before continuing startup; n (the default) starts without waiting.
 	#
 	# Export the full JPDA_OPTS rather than JPDA_ADDRESS: catalina.sh sources
 	# the bundle's setenv.sh after our environment, and Liferay setenv.sh
 	# files hardcode JPDA_ADDRESS="8000" — which would override our chosen
 	# port and collide with an already-running bundle. catalina.sh leaves a
 	# non-empty JPDA_OPTS untouched.
-	export JPDA_OPTS="-agentlib:jdwp=transport=dt_socket,address=*:$JPDA_PORT,server=y,suspend=n"
+	export JPDA_OPTS="-agentlib:jdwp=transport=dt_socket,address=*:$JPDA_PORT,server=y,suspend=$JPDA_SUSPEND"
 
-	echo "  Debug attach   : localhost:$JPDA_PORT (transport=dt_socket, suspend=n)"
+	echo "  Debug attach   : localhost:$JPDA_PORT (transport=dt_socket, suspend=$JPDA_SUSPEND)"
 	echo
 
 	exec "$CATALINA" jpda run

@@ -1,0 +1,16 @@
+# LfrRepo per-user config. Copy this file to lfr-repo.local.conf and edit.
+# lfr-repo.local.conf is gitignored, so your machine-specific paths stay local.
+
+# Roots searched for git repos, in order.
+LFR_REPO_ROOTS=(
+	"${HOME}/liferay/repos"
+)
+
+# Repo-name prefixes floated to the top of the picker, in order. A prefix
+# matches every repo whose name starts with it, so "liferay-portal" pulls up
+# liferay-portal, liferay-portal-ee, liferay-portal-7.4.x, and so on.
+LFR_REPO_PRIORITY=("liferay-portal")
+
+# Where lfrWorktree creates new worktrees, and the default base ref.
+LFR_WORKTREE_ROOT="${HOME}/liferay/repos"
+LFR_WORKTREE_BASE="upstream/master"

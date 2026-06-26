@@ -1,0 +1,55 @@
+# lfr-worktree.sh — create a Liferay git worktree off upstream/master.
+#
+# Source this from your shell rc (it must be sourced, not executed, so the
+# `cd` into the new worktree lands in your current shell):
+#
+#     source /path/to/liferay-tools/LfrRepo/lfr-worktree.sh
+#
+# Usage:
+#     lfrWorktree LPD-12345        # new worktree + branch LPD-12345 off upstream/master
+#     lfrWorktree LPD-12345 hotfix # same, but branch off the given base ref instead
+#
+# Run it from inside any liferay-portal clone; the worktree is created under
+# LFR_WORKTREE_ROOT as a sibling named liferay-portal-<branch>.
+
+# Per-user settings live in lfr-repo.local.conf (shared with lfr-repo.sh).
+_lfrWorktreeDir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[ -r "${_lfrWorktreeDir}/lfr-repo.local.conf" ] && . "${_lfrWorktreeDir}/lfr-repo.local.conf"
+
+LFR_WORKTREE_ROOT="${LFR_WORKTREE_ROOT:-${HOME}/liferay/repos}"
+LFR_WORKTREE_BASE="${LFR_WORKTREE_BASE:-upstream/master}"
+
+lfrWorktree() {
+	local branch="$1"
+	local base="${2:-${LFR_WORKTREE_BASE}}"
+
+	if [ -z "${branch}" ]; then
+		echo "usage: lfrWorktree <branch> [base-ref]" >&2
+		return 1
+	fi
+
+	if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+		echo "lfrWorktree: not inside a git repo" >&2
+		return 1
+	fi
+
+	local dir="${LFR_WORKTREE_ROOT}/liferay-portal-${branch}"
+
+	if [ -e "${dir}" ]; then
+		echo "lfrWorktree: ${dir} already exists" >&2
+		return 1
+	fi
+
+	# Refresh the base ref's remote when it is qualified as <remote>/<ref>.
+	local remote="${base%%/*}"
+	local ref="${base#*/}"
+
+	if [ "${remote}" != "${base}" ]; then
+		echo "lfrWorktree: fetching ${remote} ${ref}..." >&2
+		git fetch "${remote}" "${ref}" || return 1
+	fi
+
+	git worktree add -b "${branch}" "${dir}" "${base}" || return 1
+
+	cd "${dir}" || return 1
+}
