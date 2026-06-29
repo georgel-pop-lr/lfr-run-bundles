@@ -24,6 +24,7 @@ Open a new shell, then run `lfrTools` to list the available commands.
 | `lfrGitSync` / `lfrGitSyncEE` | Sync your team fork from upstream | `LfrGit/` |
 | `lfrGitRebase` | Interactive rebase over the last N commits | `LfrGit/` |
 | `lfrRunBundle` | Start a Liferay bundle (`start-liferay.sh`) | `LfrRunBundles/` |
+| `lfrShare` | Point a worktree at a shared, already-built bundle (no rebuild to switch) | `LfrShare/` |
 
 Each folder has its own README with the details.
 
@@ -35,7 +36,7 @@ updates without clobbering anyone's local paths.
 
 | Copy from | To (gitignored) |
 | --- | --- |
-| `LfrRepo/lfr-repo.local.conf.example` | `LfrRepo/lfr-repo.local.conf` |
+| `LfrCommon/repos.local.conf.example` | `LfrCommon/repos.local.conf` (shared by lfrRepo, lfrWorktree, lfrCache) |
 | `LfrCache/enabled-repos.txt.example` | `LfrCache/enabled-repos.txt` (or use `lfrCache on`) |
 | `LfrGit/lfr-git.local.conf.example` | `LfrGit/lfr-git.local.conf` |
 | `LfrRunBundles/start-liferay.conf.example` | `LfrRunBundles/start-liferay.conf` |

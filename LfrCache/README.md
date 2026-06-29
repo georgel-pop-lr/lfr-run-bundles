@@ -1,65 +1,79 @@
 # LfrCache
 
-Lets several repos and worktrees share a single Gradle build cache, so you do
-not burn CPU compiling the same modules twice. Build master once with the cache
-on and it stores every module's output; the other repos and worktrees then reuse
-that output for anything they did not change, and only recompile their own diff.
-You decide which repos/worktrees take part by toggling each one on or off.
+Share one Gradle build cache across Liferay repos and worktrees, so you build
+master once and the others reuse its compiled modules instead of rebuilding.
 
-It is loaded as a shell function (`lfrCache`) through the root aggregator
-`/path/to/liferay-tools/lfrTools.sh`, alongside the other tools.
+Loaded as the `lfrCache` shell function via the root `lfrTools.sh`.
 
 ## How it works
 
-`init.d/lfr-build-cache.gradle` is a Gradle init script. Gradle only auto-applies
-init scripts from `~/.gradle/init.d`, so `lfrCache install` copies it there. On
-every Gradle build it reads `enabled-repos.txt`; if the build's directory is
-under a listed repo path, it turns the build cache on for that build. Unlisted
-builds are left untouched. The cache itself is the shared default
-(`~/.gradle/caches/build-cache-1`), so all enabled repos and worktrees share it.
+Liferay's build runs Gradle with a per-repo Gradle home
+(`-Dgradle.user.home=<repo>/.gradle`) and forces caching on, so by default each
+repo caches to its own `<repo>/.gradle/caches/build-cache-1`, not shared.
+
+`lfrCache on <repo>` drops a Gradle init script into `<repo>/.gradle/init.d/`
+that sets `buildCache.local.directory` to a shared directory. That init script
+is loaded by the Liferay build (Gradle reads `init.d` from its own Gradle home),
+so every enabled repo reads and writes the one shared cache.
 
 Only the Gradle (module) layer is cached. The `ant compile` portal core step
-(portal-impl, portal-kernel) is not a Gradle task and is never cached.
+(`portal-impl`, `portal-kernel`) is not a Gradle task and is never cached.
 
-## Setup
-
-Source the root aggregator once (it loads this and every other tool):
-
-```bash
-source /path/to/liferay-tools/lfrTools.sh
-```
-
-Then install the Gradle init script once:
-
-```bash
-lfrCache install
-```
-
-## Typical flow
-
-```bash
-# 1. Enable the cache on master and build it fully to seed the cache.
-lfrCache on ~/liferay/repos/liferay-portal
-cd ~/liferay/repos/liferay-portal && ant all
-
-# 2. Enable it on each worktree. Their builds now reuse master's cached output
-#    and only recompile the modules they changed.
-lfrCache on ~/liferay/repos/liferay-portal-7.4.x
-
-# 3. Turn it off for a repo whenever you want a fully cold build.
-lfrCache off ~/liferay/repos/liferay-portal-7.4.x
-```
+Shared cache dir: `LFR_CACHE_DIR`, default
+`/media/georgelpop/Data/liferay/gradle-build-cache`. Export it to override.
 
 ## Commands
 
-Run with no path argument to act on the current directory's repo.
+Run with no path to act on the current directory's repo, or pass a path (`.`
+for current) or a name to pick from the shared repo list.
 
 | Command | Effect |
 | --- | --- |
-| `lfrCache install` | Copy the init script into `~/.gradle/init.d` |
-| `lfrCache uninstall` | Remove the init script (nothing is cached anymore) |
-| `lfrCache on [path]` | Enable the cache for a repo/worktree |
-| `lfrCache off [path]` | Disable the cache for a repo/worktree |
-| `lfrCache status [path]` | Show this repo's state, all enabled repos, install status |
+| `lfrCache on [repo]` | Share the cache: write the redirect init script into the repo and register it. |
+| `lfrCache off [repo]` | Stop sharing: remove the init script (the repo falls back to its own local cache). |
+| `lfrCache status [repo]` | Show whether the repo shares, all sharing repos, and the shared cache size. |
+| `lfrCache list` | List the cache folders on disk: the shared cache plus each repo's local `build-cache-1`, with sizes and whether it is redirected (orphaned) or standalone. |
+| `lfrCache seed [repo]` | Copy a repo's existing `build-cache-1` into the shared dir (preserve already-built entries). |
+| `lfrCache prune [repo]` | Delete the orphaned per-repo cache of a sharing repo to reclaim space. |
 
-`on`, `off`, and `status` also accept dashed forms (`-on`, `-off`, `-status`).
+`on`, `off`, `status` also accept dashed forms (`-on`, `-off`, `-status`).
+
+## How `seed` works
+
+`seed` copies a repo's existing entries INTO the shared dir. It is one-way and
+additive: source is `<repo>/.gradle/caches/build-cache-1`, target is the shared
+dir, using a no-clobber copy. Entries are files named by a content hash, so an
+entry already in the shared dir is skipped; only new ones are added. It never
+modifies or replaces the repo's own cache, and it does not create a per-repo
+folder. Use it to fold a build that happened BEFORE sharing was turned on into
+the shared cache. After `on`, builds write to the shared dir directly, so `seed`
+is only for capturing past builds.
+
+## Verifying it is shared
+
+During a build in an enabled repo, the shared dir's entry count should climb
+while the repo's own `build-cache-1` stays flat (the build writes to the shared
+dir, not the local one). In the Gradle output, reused tasks show `FROM-CACHE`,
+and the final summary reports how many tasks came `from cache`.
+
+## One cache, or several
+
+A single build uses exactly one local cache directory. The `-1` in
+`build-cache-1` is Gradle's cache format version, not a counter, so it does not
+become `-2`/`-3`. You get separate caches by using different directories: repos
+pointed at the same dir share; pointed at different dirs they are independent.
+`lfrCache` currently uses one shared dir (`LFR_CACHE_DIR`) for everything listed.
+
+## Cleanup
+
+Gradle maintains the shared cache itself: it evicts entries by last-access time
+(default `removeUnusedEntriesAfterDays = 7`), running after a build at most once
+a day, so it does not grow unbounded. The orphaned per-repo caches left after
+`on` are not touched by Gradle; use `lfrCache prune` to remove them.
+
+## Caveats
+
+- `<repo>/.gradle` is wiped by a hard `git clean -xdf` (`lfrGitClean`), which
+  removes the init script. Re-run `lfrCache on <repo>` after such a clean.
+- Hits only happen for an enabled repo building matching inputs (so a master
+  build reuses heavily; a different branch reuses only its unchanged modules).

@@ -1,9 +1,7 @@
-# lfr-worktree.sh — create a Liferay git worktree off upstream/master.
+# lfr-worktree.sh — create a Liferay git worktree (the lfrWorktree command).
 #
-# Source this from your shell rc (it must be sourced, not executed, so the
-# `cd` into the new worktree lands in your current shell):
-#
-#     source /path/to/liferay-tools/LfrRepo/lfr-worktree.sh
+# Worktree root and base ref come from the shared per-user config
+# (LFR_WORKTREE_ROOT, LFR_WORKTREE_BASE), owned by LfrCommon/lfr-repo-list.sh.
 #
 # Usage:
 #     lfrWorktree LPD-12345        # new worktree + branch LPD-12345 off upstream/master
@@ -12,16 +10,9 @@
 # Run it from inside any liferay-portal clone; the worktree is created under
 # LFR_WORKTREE_ROOT as a sibling named liferay-portal-<branch>.
 
-# Per-user settings live in lfr-repo.local.conf (shared with lfr-repo.sh).
-_lfrWorktreeDir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-[ -r "${_lfrWorktreeDir}/lfr-repo.local.conf" ] && . "${_lfrWorktreeDir}/lfr-repo.local.conf"
-
-LFR_WORKTREE_ROOT="${LFR_WORKTREE_ROOT:-${HOME}/liferay/repos}"
-LFR_WORKTREE_BASE="${LFR_WORKTREE_BASE:-upstream/master}"
-
 lfrWorktree() {
 	local branch="$1"
-	local base="${2:-${LFR_WORKTREE_BASE}}"
+	local base="${2:-${LFR_WORKTREE_BASE:-upstream/master}}"
 
 	if [ -z "${branch}" ]; then
 		echo "usage: lfrWorktree <branch> [base-ref]" >&2
@@ -33,7 +24,7 @@ lfrWorktree() {
 		return 1
 	fi
 
-	local dir="${LFR_WORKTREE_ROOT}/liferay-portal-${branch}"
+	local dir="${LFR_WORKTREE_ROOT:-${HOME}/liferay/repos}/liferay-portal-${branch}"
 
 	if [ -e "${dir}" ]; then
 		echo "lfrWorktree: ${dir} already exists" >&2

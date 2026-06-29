@@ -1,0 +1,164 @@
+# lfr-share.sh — point a worktree at a shared (already-built) bundle.
+#
+# Writes app.server.parent.dir into <repo>/app.server.$USER.properties so the
+# repo uses a chosen bundle. Switching needs no build: a built bundle is
+# self-contained, so you can point a worktree at the bundle another worktree
+# built and just run it. Deploy only your changed modules to put your code in.
+#
+# Usage:
+#   lfrShare share [bundle] [repo]   pick a bundle and a repo (pickers if omitted)
+#   lfrShare <bundle> [repo]         shorthand: bundle by path/name, repo picker
+#   lfrShare status [repo]           show which bundle the repo(s) point at
+#   lfrShare reset  [repo]           restore the repo's original bundle config
+#
+# Bundles are listed/resolved under LFR_BUNDLES_DIRS (export to override).
+#
+# Caveat: a shared bundle runs one server at a time and holds one DB/ES/OSGi
+# state, so use it for branches of the same schema; deploying overwrites what
+# is already in the bundle.
+
+if [ -z "${LFR_BUNDLES_DIRS+x}" ]; then
+	LFR_BUNDLES_DIRS=("${HOME}/liferay/bundles" "/media/${USER}/Data/liferay/bundles")
+fi
+
+# Resolve a repo path from an argument, or open the shared repo picker.
+_lfrShareRepo() {
+	local arg="${1-}" sel
+	if [ -n "${arg}" ] && [ -d "${arg}" ]; then
+		git -C "${arg}" rev-parse --show-toplevel 2>/dev/null && return 0
+		echo "Not inside a git repo: ${arg}" >&2
+		return 1
+	fi
+	if ! declare -F _lfrRepoPick >/dev/null 2>&1; then
+		echo "lfrShare: repo picker needs LfrCommon loaded; pass a path instead." >&2
+		return 1
+	fi
+	sel="$(_lfrRepoPick "${arg}")" || return 1
+	git -C "${sel}" rev-parse --show-toplevel 2>/dev/null || printf '%s\n' "${sel}"
+}
+
+# Emit "<path>\t<name>  (<root>)" for every bundle-looking dir under the roots.
+_lfrBundleEntries() {
+	local root d name
+	for root in "${LFR_BUNDLES_DIRS[@]}"; do
+		[ -d "${root}" ] || continue
+		for d in "${root}"/*/; do
+			[ -d "${d}" ] || continue
+			if compgen -G "${d}tomcat*" >/dev/null 2>&1 || [ -e "${d}.liferay-home" ] || [ -d "${d}liferay-dxp" ]; then
+				name="$(basename "${d}")"
+				printf '%s\t%s  (%s)\n' "${d%/}" "${name}" "${root}"
+			fi
+		done
+	done
+}
+
+# Resolve a bundle to an absolute path: an existing path is used directly, a
+# bare name is matched under LFR_BUNDLES_DIRS.
+_lfrShareBundle() {
+	local b="${1-}" root matches=()
+	[ -z "${b}" ] && { echo "lfrShare: give a bundle path or name" >&2; return 1; }
+	if [ -d "${b}" ]; then (cd "${b}" && pwd); return 0; fi
+	for root in "${LFR_BUNDLES_DIRS[@]}"; do
+		[ -d "${root}/${b}" ] && matches+=("${root}/${b}")
+	done
+	case "${#matches[@]}" in
+	1) printf '%s\n' "${matches[0]}" ;;
+	0) echo "lfrShare: bundle '${b}' not found under: ${LFR_BUNDLES_DIRS[*]}" >&2; return 1 ;;
+	*) echo "lfrShare: '${b}' matches multiple, pass an absolute path:" >&2
+		printf '  %s\n' "${matches[@]}" >&2; return 1 ;;
+	esac
+}
+
+# Resolve a bundle from an argument, or open the bundle picker (shared picker).
+_lfrShareGetBundle() {
+	if [ -n "${1-}" ]; then
+		_lfrShareBundle "${1}"
+		return
+	fi
+	if ! declare -F _lfrPick >/dev/null 2>&1; then
+		echo "lfrShare: bundle picker needs LfrCommon loaded; pass a bundle path." >&2
+		return 1
+	fi
+	local entries
+	entries="$(_lfrBundleEntries)"
+	[ -z "${entries}" ] && { echo "lfrShare: no bundles found under: ${LFR_BUNDLES_DIRS[*]}" >&2; return 1; }
+	printf '%s\n' "${entries}" | _lfrPick 'bundle> '
+}
+
+# Print one repo's effective bundle pointer.
+_lfrShareShow() {
+	local r="${1}" pf="${1}/app.server.${USER}.properties" line val tag=""
+	if [ -f "${pf}" ] && line="$(grep -m1 '^app.server.parent.dir=' "${pf}")"; then
+		val="${line#app.server.parent.dir=}"
+		val="${val//\$\{project.dir\}/${r}}"
+	else
+		val="(default, own ../../bundles)"
+	fi
+	[ -f "${r}/app.server.${USER}.lfrshare-bak.properties" ] && tag="  [shared via lfrShare]"
+	printf '  %s\n      -> %s%s\n' "${r}" "${val}" "${tag}"
+}
+
+# Write the bundle pointer into a repo's app.server.$USER.properties.
+_lfrShareApply() {
+	local repo="${1}" bundle="${2}"
+	local pf="${repo}/app.server.${USER}.properties"
+	local bak="${repo}/app.server.${USER}.lfrshare-bak.properties"
+	[ -f "${bak}" ] || { [ -f "${pf}" ] && cp "${pf}" "${bak}"; }
+	if [ -f "${pf}" ] && grep -q '^app.server.parent.dir=' "${pf}"; then
+		sed -i "s|^app.server.parent.dir=.*|app.server.parent.dir=${bundle}|" "${pf}"
+	else
+		printf 'app.server.parent.dir=%s\n' "${bundle}" >>"${pf}"
+	fi
+	echo "Pointed ${repo}"
+	echo "    at bundle ${bundle}"
+	echo "No build needed to run it; deploy your changed modules to put your code in."
+}
+
+lfrShare() {
+	local cmd="${1:-status}"
+	local repo bundle pf bak
+
+	case "${cmd}" in
+	status)
+		if [ -n "${2-}" ]; then
+			repo="$(_lfrShareRepo "${2}")" || return 1
+			_lfrShareShow "${repo}"
+		elif declare -F _lfrRepoEntries >/dev/null 2>&1; then
+			# Only portal-type repos have a bundle, so list just liferay-portal*.
+			while IFS=$'\t' read -r path _; do
+				[ -n "${path}" ] || continue
+				case "$(basename "${path}")" in
+				liferay-portal*) _lfrShareShow "${path}" ;;
+				esac
+			done < <(_lfrRepoEntries)
+		else
+			echo "lfrShare: need LfrCommon for the repo list, or pass a repo path." >&2
+			return 1
+		fi
+		;;
+	reset)
+		repo="$(_lfrShareRepo "${2-}")" || return 1
+		pf="${repo}/app.server.${USER}.properties"
+		bak="${repo}/app.server.${USER}.lfrshare-bak.properties"
+		if [ -f "${bak}" ]; then
+			mv "${bak}" "${pf}" && echo "restored original bundle config: ${repo}"
+		else
+			echo "no lfrShare backup for ${repo} (nothing to reset)"
+		fi
+		;;
+	share)
+		bundle="$(_lfrShareGetBundle "${2-}")" || return 1
+		repo="$(_lfrShareRepo "${3-}")" || return 1
+		_lfrShareApply "${repo}" "${bundle}"
+		;;
+	help | --help | -h)
+		echo "usage: lfrShare share [bundle] [repo] | <bundle> [repo] | status [repo] | reset [repo]"
+		;;
+	*)
+		# Shorthand: $1 is the bundle (path/name), $2 the optional repo.
+		bundle="$(_lfrShareBundle "${1}")" || return 1
+		repo="$(_lfrShareRepo "${2-}")" || return 1
+		_lfrShareApply "${repo}" "${bundle}"
+		;;
+	esac
+}

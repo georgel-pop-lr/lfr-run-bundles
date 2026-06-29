@@ -1,87 +1,169 @@
-# lfr-cache.sh — per repo/worktree Gradle build cache toggle.
+# lfr-cache.sh — share one Gradle build cache across Liferay repos/worktrees.
 #
-# Source this from your shell rc (normally via the root lfrTools.sh). It
-# defines the lfrCache function. Build master once with the cache on to seed it,
-# then enable it on each worktree so their builds reuse master's compiled module
-# output and only recompile what that worktree changed.
+# Liferay's build runs Gradle with a per-repo Gradle home (<repo>/.gradle) and
+# forces caching on, so by default each repo caches to its own
+# <repo>/.gradle/caches/build-cache-1 (not shared). lfrCache makes the listed
+# repos share ONE cache by dropping a Gradle init script into
+# <repo>/.gradle/init.d that points buildCache.local.directory at a shared dir.
+# That init script IS loaded by the Liferay build (it reads init.d from its own
+# Gradle home), so enabled repos read and write the same cache.
 #
 # Usage:
-#     lfrCache on      [path]   enable cache for a repo/worktree (default: cwd)
-#     lfrCache off     [path]   disable cache for a repo/worktree
-#     lfrCache status  [path]   show this repo's state, all enabled repos, install state
-#     lfrCache install          install the Gradle init script into ~/.gradle/init.d
-#     lfrCache uninstall        remove the Gradle init script
+#   lfrCache on    [repo]   share the cache for a repo/worktree (picker if no arg)
+#   lfrCache off   [repo]   stop sharing (remove the init script)
+#   lfrCache status [repo]  show which repos share, and the shared cache size
+#   lfrCache list           list the cache folders on disk (shared + per-repo) and owners
+#   lfrCache seed  [repo]   copy a repo's existing build cache into the shared dir
+#   lfrCache prune [repo]   delete the orphaned per-repo cache of a sharing repo
 #
-# on/off/status also accept the dashed forms -on, -off, -status.
+# Shared cache dir: $LFR_CACHE_DIR (default below); export to override.
+#
+# Caveat: <repo>/.gradle is wiped by a hard `git clean -xdf`, which removes the
+# init script. Re-run `lfrCache on <repo>` after such a clean.
 
 _lfrCacheDir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+: "${LFR_CACHE_DIR:=/media/georgelpop/Data/liferay/gradle-build-cache}"
+
+# Resolve a repo path from an argument, or open the shared repo picker.
+_lfrCacheResolveRepo() {
+	local arg="${1-}" sel
+	if [ -n "${arg}" ] && [ -d "${arg}" ]; then
+		git -C "${arg}" rev-parse --show-toplevel 2>/dev/null && return 0
+		echo "Not inside a git repo: ${arg}" >&2
+		return 1
+	fi
+	if ! declare -F _lfrRepoPick >/dev/null 2>&1; then
+		echo "lfrCache: repo picker needs LfrCommon loaded; pass a path instead." >&2
+		return 1
+	fi
+	sel="$(_lfrRepoPick "${arg}")" || return 1
+	git -C "${sel}" rev-parse --show-toplevel 2>/dev/null || printf '%s\n' "${sel}"
+}
 
 lfrCache() {
-	local tools_dir="${_lfrCacheDir}"
-	local registry="${tools_dir}/enabled-repos.txt"
-	local init_src="${tools_dir}/init.d/lfr-build-cache.gradle"
-	local gradle_home="${GRADLE_USER_HOME:-$HOME/.gradle}"
-	local init_dest="${gradle_home}/init.d/lfr-build-cache.gradle"
-
+	local registry="${_lfrCacheDir}/enabled-repos.txt"
 	local cmd="${1:-status}"
 	cmd="${cmd#-}"
-	local target="${2:-$PWD}"
-	local repo
+	local repo init
 
-	mkdir -p "${tools_dir}"
+	mkdir -p "${_lfrCacheDir}"
 	touch "${registry}"
 
 	case "${cmd}" in
-	install)
-		mkdir -p "${gradle_home}/init.d"
-		sed "s#@LFRCACHE_REGISTRY@#${registry}#g" "${init_src}" >"${init_dest}" &&
-			echo "Installed init script: ${init_dest}"
-		echo "Cache stays OFF until you run: lfrCache on <repo>"
-		;;
-	uninstall)
-		rm -f "${init_dest}" && echo "Removed init script: ${init_dest}"
-		;;
 	on)
-		repo="$(git -C "${target}" rev-parse --show-toplevel 2>/dev/null)" ||
-			{ echo "Not inside a git repo: ${target}" >&2; return 1; }
-		if grep -qxF "${repo}" "${registry}"; then
-			echo "Already enabled: ${repo}"
-		else
-			echo "${repo}" >>"${registry}"
-			echo "Enabled build cache for: ${repo}"
-		fi
+		repo="$(_lfrCacheResolveRepo "${2-}")" || return 1
+		mkdir -p "${repo}/.gradle/init.d" "${LFR_CACHE_DIR}"
+		init="${repo}/.gradle/init.d/lfr-build-cache.gradle"
+		cat >"${init}" <<EOF
+// Managed by lfrCache. Redirects this repo's Gradle build cache to a shared
+// directory so other lfrCache-enabled repos and worktrees reuse the entries.
+gradle.settingsEvaluated { settings ->
+	settings.buildCache {
+		local {
+			directory = '${LFR_CACHE_DIR}'
+			enabled = true
+		}
+	}
+}
+EOF
+		grep -qxF "${repo}" "${registry}" || echo "${repo}" >>"${registry}"
+		echo "Sharing build cache for: ${repo}"
+		echo "  -> ${LFR_CACHE_DIR}"
 		;;
 	off)
-		repo="$(git -C "${target}" rev-parse --show-toplevel 2>/dev/null)" ||
-			{ echo "Not inside a git repo: ${target}" >&2; return 1; }
+		repo="$(_lfrCacheResolveRepo "${2-}")" || return 1
+		rm -f "${repo}/.gradle/init.d/lfr-build-cache.gradle"
 		grep -vxF "${repo}" "${registry}" >"${registry}.tmp" || true
 		mv "${registry}.tmp" "${registry}"
-		echo "Disabled build cache for: ${repo}"
+		echo "Stopped sharing for: ${repo}"
+		;;
+	seed)
+		repo="$(_lfrCacheResolveRepo "${2-}")" || return 1
+		local src="${repo}/.gradle/caches/build-cache-1"
+		[ -d "${src}" ] || { echo "no build cache at ${src}" >&2; return 1; }
+		mkdir -p "${LFR_CACHE_DIR}"
+		echo "Seeding shared cache from ${src} ..."
+		cp -rn "${src}/." "${LFR_CACHE_DIR}/" && echo "seeded into ${LFR_CACHE_DIR}"
 		;;
 	status)
-		repo="$(git -C "${target}" rev-parse --show-toplevel 2>/dev/null)"
+		repo="$(git -C "${2:-$PWD}" rev-parse --show-toplevel 2>/dev/null)"
 		if [ -n "${repo}" ]; then
-			if grep -qxF "${repo}" "${registry}"; then
-				echo "ON   ${repo}"
+			if [ -f "${repo}/.gradle/init.d/lfr-build-cache.gradle" ]; then
+				echo "SHARED ${repo}"
 			else
-				echo "OFF  ${repo}"
+				echo "local  ${repo}"
 			fi
 		fi
-		echo "--- all enabled repos ---"
+		echo "--- repos sharing the cache ---"
 		grep -vE '^[[:space:]]*(#|$)' "${registry}" 2>/dev/null || echo "(none)"
-		echo "--- init script installed? ---"
-		if [ -f "${init_dest}" ]; then
-			echo "yes: ${init_dest}"
+		echo "--- shared cache dir ---"
+		if [ -d "${LFR_CACHE_DIR}" ]; then
+			echo "${LFR_CACHE_DIR} ($(du -sh "${LFR_CACHE_DIR}" 2>/dev/null | cut -f1), $(find "${LFR_CACHE_DIR}" -type f ! -name '*.lock' 2>/dev/null | wc -l) entries)"
 		else
-			echo "no (run: lfrCache install)"
+			echo "${LFR_CACHE_DIR} (not created yet)"
 		fi
 		;;
+	prune)
+		# Delete the orphaned per-repo build cache of sharing repos (their local
+		# cache is unused once redirected to the shared dir).
+		local targets=() r local_cache sz freed=0
+		if [ -n "${2-}" ]; then
+			repo="$(_lfrCacheResolveRepo "${2}")" || return 1
+			targets=("${repo}")
+		else
+			while IFS= read -r r; do
+				[ -n "${r}" ] && targets+=("${r}")
+			done < <(grep -vE '^[[:space:]]*(#|$)' "${registry}")
+		fi
+		[ "${#targets[@]}" -eq 0 ] && { echo "no sharing repos to prune"; return 0; }
+		for r in "${targets[@]}"; do
+			if [ ! -f "${r}/.gradle/init.d/lfr-build-cache.gradle" ]; then
+				echo "skip (not sharing, local cache still in use): ${r}"
+				continue
+			fi
+			local_cache="${r}/.gradle/caches/build-cache-1"
+			if [ -d "${local_cache}" ]; then
+				sz=$(du -sb "${local_cache}" 2>/dev/null | cut -f1)
+				rm -rf "${local_cache}" &&
+					{ freed=$((freed + sz)); echo "pruned ${local_cache} ($(awk "BEGIN{printf \"%.0f\", ${sz}/1048576}") MB)"; }
+			else
+				echo "nothing to prune: ${r}"
+			fi
+		done
+		echo "removed ~$(awk "BEGIN{printf \"%.1f\", ${freed}/1073741824}") GB of orphaned per-repo caches"
+		echo "(entries hardlinked into the shared dir do not free until aged out there)"
+		;;
+	list | ls)
+		echo "Shared cache:"
+		if [ -d "${LFR_CACHE_DIR}" ]; then
+			echo "  ${LFR_CACHE_DIR}  ($(du -sh "${LFR_CACHE_DIR}" 2>/dev/null | cut -f1), $(find "${LFR_CACHE_DIR}" -type f ! -name '*.lock' 2>/dev/null | wc -l) entries)"
+		else
+			echo "  ${LFR_CACHE_DIR}  (not created)"
+		fi
+		echo "Per-repo caches under: ${LFR_REPO_ROOTS[*]}"
+		local root d bc tag found=0
+		for root in "${LFR_REPO_ROOTS[@]}"; do
+			[ -d "${root}" ] || continue
+			for d in "${root}"/*/; do
+				bc="${d}.gradle/caches/build-cache-1"
+				[ -d "${bc}" ] || continue
+				found=1
+				if [ -f "${d}.gradle/init.d/lfr-build-cache.gradle" ]; then
+					tag="redirected to shared (orphaned, prunable)"
+				else
+					tag="standalone"
+				fi
+				printf '  %-6s %s  [%s]\n' "$(du -sh "${bc}" 2>/dev/null | cut -f1)" "${d%/}" "${tag}"
+			done
+		done
+		if [ "${found}" -eq 0 ]; then echo "  (none found)"; fi
+		;;
 	help | --help | -h | "")
-		echo "usage: lfrCache on|off|status|install|uninstall [path]"
+		echo "usage: lfrCache on|off|status|list|seed|prune [repo]"
 		;;
 	*)
 		echo "lfrCache: unknown command '${cmd}'" >&2
-		echo "usage: lfrCache on|off|status|install|uninstall [path]" >&2
+		echo "usage: lfrCache on|off|status|list|seed|prune [repo]" >&2
 		return 1
 		;;
 	esac

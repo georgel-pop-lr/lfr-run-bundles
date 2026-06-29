@@ -13,9 +13,11 @@ script runs in a subshell and its `cd` would not reach your interactive shell.
 | File | Purpose |
 |---|---|
 | `lfr-repo.sh` | Defines the `lfrRepo` switcher and its tab-completion. |
-| `lfr-worktree.sh` | Defines the `lfrWorktree` creator and its base-ref default. |
-| `lfr-repo.local.conf` | Your machine-specific paths (repo roots, worktree root). Gitignored. |
-| `lfr-repo.local.conf.example` | Tracked template; copy it to `lfr-repo.local.conf`. |
+| `lfr-worktree.sh` | Defines the `lfrWorktree` creator. |
+
+The repo list, picker, and per-user config live in the shared module
+`../LfrCommon/lfr-repo-list.sh` (config in `../LfrCommon/repos.local.conf`),
+since `lfrCache` reuses the same picker.
 
 ## Setup
 
@@ -26,10 +28,10 @@ script runs in a subshell and its `cd` would not reach your interactive shell.
    source /path/to/liferay-tools/lfrTools.sh
    ```
 
-2. Create your per-user config from the example and edit it:
+2. Create your per-user config from the example and edit it (in `LfrCommon`):
 
    ```bash
-   cp lfr-repo.local.conf.example lfr-repo.local.conf
+   cp ../LfrCommon/repos.local.conf.example ../LfrCommon/repos.local.conf
    ```
 
    Set `LFR_REPO_ROOTS` (the directories scanned, in listing order),
@@ -92,9 +94,9 @@ of `lfrRepo` alongside your other portal clones.
 
 ## Configuration
 
-All settings live in `lfr-repo.local.conf` (gitignored; copy the `.example`).
-Both scripts source it, and the `LFR_WORKTREE_*` values also honor an
-environment override set before sourcing.
+All settings live in `../LfrCommon/repos.local.conf` (gitignored; copy the
+`.example`). The shared module sources it, and the `LFR_WORKTREE_*` values also
+honor an environment override when the config does not set them.
 
 | Variable | Default | Override via env? | Purpose |
 |---|---|---|---|

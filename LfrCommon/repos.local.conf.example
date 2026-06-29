@@ -1,5 +1,6 @@
-# LfrRepo per-user config. Copy this file to lfr-repo.local.conf and edit.
-# lfr-repo.local.conf is gitignored, so your machine-specific paths stay local.
+# Liferay repo per-user config. Copy to repos.local.conf and edit.
+# repos.local.conf is gitignored, so your machine-specific paths stay local.
+# Shared by lfrRepo, lfrWorktree, and lfrCache.
 
 # Roots searched for git repos, in order.
 LFR_REPO_ROOTS=(
