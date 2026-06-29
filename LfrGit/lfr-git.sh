@@ -3,8 +3,8 @@
 # Source this from your shell rc (normally via the root lfrTools.sh). It defines:
 #     lfrGitCleanDry   preview what `git clean` would remove (safe, no deletion)
 #     lfrGitClean      remove untracked + ignored files, keeping IDE and per-user props
-#     lfrGitSync       sync your team fork's liferay-portal from upstream
-#     lfrGitSyncEE     sync your team fork's liferay-portal-ee master from upstream
+#     lfrGitSync       sync a fork's liferay-portal from upstream ([org] optional)
+#     lfrGitSyncEE     sync a fork's liferay-portal-ee master from upstream ([org] optional)
 #     lfrGitRebase     interactive rebase over the last N commits (default 20)
 #
 # Per-user settings (your team fork org) live in lfr-git.local.conf next to this
@@ -34,24 +34,32 @@ lfrGitClean() {
 	git clean -xdf "${_lfrGitCleanExcludes[@]}" "$@"
 }
 
-_lfrGitForkReady() {
-	if [ -z "${LFR_GIT_FORK_ORG:-}" ]; then
-		echo "lfrGitSync: set LFR_GIT_FORK_ORG in ${_lfrGitDir}/lfr-git.local.conf" >&2
+# Resolve the fork org: use the passed argument, else LFR_GIT_FORK_ORG. Echoes
+# the org on success; errors if neither is set.
+_lfrGitForkOrg() {
+	local org="${1:-${LFR_GIT_FORK_ORG:-}}"
+	if [ -z "${org}" ]; then
+		echo "lfrGitSync: pass a fork org or set LFR_GIT_FORK_ORG in ${_lfrGitDir}/lfr-git.local.conf" >&2
 		return 1
 	fi
+	printf '%s\n' "${org}"
 }
 
-# Sync your team fork's liferay-portal from upstream.
+# Sync a team fork's liferay-portal from upstream. Pass a fork org to override
+# the configured LFR_GIT_FORK_ORG: lfrGitSync [org]
 lfrGitSync() {
-	_lfrGitForkReady || return 1
-	gh repo sync "${LFR_GIT_FORK_ORG}/liferay-portal" \
+	local org
+	org="$(_lfrGitForkOrg "${1-}")" || return 1
+	gh repo sync "${org}/liferay-portal" \
 		--source "${LFR_GIT_UPSTREAM_ORG}/liferay-portal"
 }
 
-# Sync your team fork's liferay-portal-ee master from upstream.
+# Sync a team fork's liferay-portal-ee master from upstream. Pass a fork org to
+# override the configured LFR_GIT_FORK_ORG: lfrGitSyncEE [org]
 lfrGitSyncEE() {
-	_lfrGitForkReady || return 1
-	gh repo sync "${LFR_GIT_FORK_ORG}/liferay-portal-ee" --branch master \
+	local org
+	org="$(_lfrGitForkOrg "${1-}")" || return 1
+	gh repo sync "${org}/liferay-portal-ee" --branch master \
 		--source "${LFR_GIT_UPSTREAM_ORG}/liferay-portal-ee" --branch master
 }
 
