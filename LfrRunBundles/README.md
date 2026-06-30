@@ -34,7 +34,8 @@ together you can move the folder freely.
    ```
 
 3. Source the Liferay Tools aggregator from your shell rc (see the top-level
-   README). That defines `lfrRunBundle`, so you can call it from anywhere:
+   README). That defines `lfrRunBundle` (short alias `lfrrb`), so you can call it
+   from anywhere:
 
    ```bash
    source /path/to/liferay-tools/lfrTools.sh

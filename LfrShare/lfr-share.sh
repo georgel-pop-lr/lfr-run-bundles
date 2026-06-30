@@ -114,11 +114,47 @@ _lfrShareApply() {
 	echo "No build needed to run it; deploy your changed modules to put your code in."
 }
 
+# Interactive default: show each portal repo's share state in the picker, then
+# toggle the selected one. A shared repo is reset (off); an unshared repo is
+# shared (on), which opens the bundle picker to choose what to point it at.
+_lfrShareToggle() {
+	if ! declare -F _lfrRepoEntries >/dev/null 2>&1; then
+		echo "lfrShare: picker needs LfrCommon loaded; use lfrShare share|reset <repo>." >&2
+		return 1
+	fi
+	local entries="" path name bak pf val state sel bundle
+	while IFS=$'\t' read -r path name; do
+		[ -n "${path}" ] || continue
+		case "$(basename "${path}")" in liferay-portal*) ;; *) continue ;; esac
+		bak="${path}/app.server.${USER}.lfrshare-bak.properties"
+		if [ -f "${bak}" ]; then
+			pf="${path}/app.server.${USER}.properties"
+			val="$(grep -m1 '^app.server.parent.dir=' "${pf}" 2>/dev/null)"
+			val="${val#app.server.parent.dir=}"
+			state="shared -> $(basename "${val}")"
+		else
+			state="not shared"
+		fi
+		entries+="${path}"$'\t'"${name}  [${state}]"$'\n'
+	done < <(_lfrRepoEntries)
+	[ -z "${entries}" ] && { echo "lfrShare: no liferay-portal* repos found" >&2; return 1; }
+	sel="$(printf '%s' "${entries}" | _lfrPick 'toggle share> ')" || return 1
+	if [ -f "${sel}/app.server.${USER}.lfrshare-bak.properties" ]; then
+		lfrShare reset "${sel}"
+	else
+		bundle="$(_lfrShareGetBundle "")" || return 1
+		_lfrShareApply "${sel}" "${bundle}"
+	fi
+}
+
 lfrShare() {
-	local cmd="${1:-status}"
+	local cmd="${1-}"
 	local repo bundle pf bak
 
 	case "${cmd}" in
+	"" | toggle)
+		_lfrShareToggle
+		;;
 	status)
 		if [ -n "${2-}" ]; then
 			repo="$(_lfrShareRepo "${2}")" || return 1
@@ -152,7 +188,8 @@ lfrShare() {
 		_lfrShareApply "${repo}" "${bundle}"
 		;;
 	help | --help | -h)
-		echo "usage: lfrShare share [bundle] [repo] | <bundle> [repo] | status [repo] | reset [repo]"
+		echo "usage: lfrShare [toggle] | share [bundle] [repo] | <bundle> [repo] | status [repo] | reset [repo]"
+		echo "  bare lfrShare opens a picker showing each repo's share state; selecting one toggles it."
 		;;
 	*)
 		# Shorthand: $1 is the bundle (path/name), $2 the optional repo.
@@ -162,3 +199,6 @@ lfrShare() {
 		;;
 	esac
 }
+
+# Short alias.
+lfrs() { lfrShare "$@"; }

@@ -26,4 +26,8 @@ _lfrRepoComplete() {
 	COMPREPLY=($(compgen -W "${names}" -- "${COMP_WORDS[COMP_CWORD]}"))
 }
 
+# Short alias.
+lfrr() { lfrRepo "$@"; }
+
 complete -F _lfrRepoComplete lfrRepo
+complete -F _lfrRepoComplete lfrr

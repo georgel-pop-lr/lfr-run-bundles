@@ -9,3 +9,6 @@ _lfrRunDir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 lfrRunBundle() {
 	"${_lfrRunDir}/start-liferay.sh" "$@"
 }
+
+# Short alias.
+lfrrb() { lfrRunBundle "$@"; }

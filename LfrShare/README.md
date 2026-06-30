@@ -3,7 +3,8 @@
 Point a worktree at a shared, already-built bundle, so several worktrees can use
 one bundle instead of each building and keeping its own.
 
-Loaded as the `lfrShare` shell function via the root `lfrTools.sh`.
+Loaded as the `lfrShare` shell function (short alias `lfrs`) via the root
+`lfrTools.sh`.
 
 ## Why no build is needed to switch
 
@@ -24,6 +25,7 @@ path to skip the picker.
 
 | Command | Effect |
 | --- | --- |
+| `lfrShare` (no args) | Picker listing each `liferay-portal*` repo and its share state; selecting one **toggles** it: a shared repo is reset, an unshared one is shared (then pick a bundle). Press Esc to cancel without changing anything. |
 | `lfrShare share [bundle] [repo]` | Pick a bundle and a repo, point the repo at the bundle. |
 | `lfrShare <bundle> [repo]` | Shorthand: bundle by path/name, repo from picker if omitted. |
 | `lfrShare status [repo]` | Show which bundle each repo points at. With no repo it lists only `liferay-portal*` repos (the ones that have a bundle); pass a path for any other repo. |

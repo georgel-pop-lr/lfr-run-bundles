@@ -3,7 +3,8 @@
 Share one Gradle build cache across Liferay repos and worktrees, so you build
 master once and the others reuse its compiled modules instead of rebuilding.
 
-Loaded as the `lfrCache` shell function via the root `lfrTools.sh`.
+Loaded as the `lfrCache` shell function (short alias `lfrc`) via the root
+`lfrTools.sh`.
 
 ## How it works
 
@@ -29,6 +30,7 @@ for current) or a name to pick from the shared repo list.
 
 | Command | Effect |
 | --- | --- |
+| `lfrCache` (no args) | Picker listing each repo and its cache state; selecting one **toggles** it (ON to off, off to ON). Press Esc to cancel without changing anything. |
 | `lfrCache on [repo]` | Share the cache: write the redirect init script into the repo and register it. |
 | `lfrCache off [repo]` | Stop sharing: remove the init script (the repo falls back to its own local cache). |
 | `lfrCache status [repo]` | Show whether the repo shares, all sharing repos, and the shared cache size. |

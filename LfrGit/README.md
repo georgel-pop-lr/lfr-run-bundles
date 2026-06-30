@@ -19,13 +19,13 @@ cp lfr-git.local.conf.example lfr-git.local.conf
 
 ## Commands
 
-| Command | What it does |
-| --- | --- |
-| `lfrGitCleanDry` | Preview what `git clean` would remove. Run this first. |
-| `lfrGitClean` | Remove untracked and ignored files, keeping `*.iml`, `.idea`, and `app.server/build/test.$USER.properties`. |
-| `lfrGitSync [org]` | `gh repo sync <org>/liferay-portal --source <upstream>/liferay-portal`. `org` defaults to `LFR_GIT_FORK_ORG`. |
-| `lfrGitSyncEE [org]` | Same for `liferay-portal-ee` master. |
-| `lfrGitRebase [N]` | `git rebase -i HEAD~N` (N defaults to 20). |
+| Command | Short | What it does |
+| --- | --- | --- |
+| `lfrGitCleanDry` | `lfrgcd` | Preview what `git clean` would remove. Run this first. |
+| `lfrGitClean` | `lfrgc` | Remove untracked and ignored files, keeping `*.iml`, `.idea`, and `app.server/build/test.$USER.properties`. |
+| `lfrGitSync [org]` | `lfrgs` | `gh repo sync <org>/liferay-portal --source <upstream>/liferay-portal`. `org` defaults to `LFR_GIT_FORK_ORG`. |
+| `lfrGitSyncEE [org]` | `lfrgse` | Same for `liferay-portal-ee` master. |
+| `lfrGitRebase [N]` | `lfrgr` | `git rebase -i HEAD~N` (N defaults to 20). |
 
 `lfrGitSync`/`lfrGitSyncEE` take an optional fork org to sync a different fork
 than the configured `LFR_GIT_FORK_ORG`, e.g. `lfrGitSync my-other-org`.

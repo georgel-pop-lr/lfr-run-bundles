@@ -40,9 +40,35 @@ _lfrCacheResolveRepo() {
 	git -C "${sel}" rev-parse --show-toplevel 2>/dev/null || printf '%s\n' "${sel}"
 }
 
+# Interactive default: show each repo's cache-sharing state in the picker, then
+# toggle the selected one (ON -> off, off -> ON). Esc cancels with no change.
+_lfrCacheToggle() {
+	if ! declare -F _lfrRepoEntries >/dev/null 2>&1; then
+		echo "lfrCache: picker needs LfrCommon loaded; use lfrCache on|off <repo>." >&2
+		return 1
+	fi
+	local entries="" path name state sel
+	while IFS=$'\t' read -r path name; do
+		[ -n "${path}" ] || continue
+		if [ -f "${path}/.gradle/init.d/lfr-build-cache.gradle" ]; then
+			state="cache: ON"
+		else
+			state="cache: off"
+		fi
+		entries+="${path}"$'\t'"${name}  [${state}]"$'\n'
+	done < <(_lfrRepoEntries)
+	[ -z "${entries}" ] && { echo "lfrCache: no repos found" >&2; return 1; }
+	sel="$(printf '%s' "${entries}" | _lfrPick 'toggle cache> ')" || return 1
+	if [ -f "${sel}/.gradle/init.d/lfr-build-cache.gradle" ]; then
+		lfrCache off "${sel}"
+	else
+		lfrCache on "${sel}"
+	fi
+}
+
 lfrCache() {
 	local registry="${_lfrCacheDir}/enabled-repos.txt"
-	local cmd="${1:-status}"
+	local cmd="${1-}"
 	cmd="${cmd#-}"
 	local repo init
 
@@ -50,6 +76,9 @@ lfrCache() {
 	touch "${registry}"
 
 	case "${cmd}" in
+	"" | toggle)
+		_lfrCacheToggle
+		;;
 	on)
 		repo="$(_lfrCacheResolveRepo "${2-}")" || return 1
 		mkdir -p "${repo}/.gradle/init.d" "${LFR_CACHE_DIR}"
@@ -158,13 +187,17 @@ EOF
 		done
 		if [ "${found}" -eq 0 ]; then echo "  (none found)"; fi
 		;;
-	help | --help | -h | "")
-		echo "usage: lfrCache on|off|status|list|seed|prune [repo]"
+	help | --help | -h)
+		echo "usage: lfrCache [toggle] | on|off|status|list|seed|prune [repo]"
+		echo "  bare lfrCache opens a picker showing each repo's cache state; selecting one toggles it."
 		;;
 	*)
 		echo "lfrCache: unknown command '${cmd}'" >&2
-		echo "usage: lfrCache on|off|status|list|seed|prune [repo]" >&2
+		echo "usage: lfrCache [toggle] | on|off|status|list|seed|prune [repo]" >&2
 		return 1
 		;;
 	esac
 }
+
+# Short alias.
+lfrc() { lfrCache "$@"; }

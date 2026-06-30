@@ -67,3 +67,10 @@ lfrGitSyncEE() {
 lfrGitRebase() {
 	git rebase -i "HEAD~${1:-20}"
 }
+
+# Short aliases.
+lfrgc() { lfrGitClean "$@"; }
+lfrgcd() { lfrGitCleanDry "$@"; }
+lfrgs() { lfrGitSync "$@"; }
+lfrgse() { lfrGitSyncEE "$@"; }
+lfrgr() { lfrGitRebase "$@"; }

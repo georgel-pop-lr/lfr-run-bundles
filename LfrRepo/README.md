@@ -1,8 +1,9 @@
 # LfrRepo tools
 
 A small set of shell functions for working with Liferay git repos scattered
-across more than one root directory. `lfrRepo` jumps between clones without
-typing full paths; `lfrWorktree` spins up a new worktree off `upstream/master`.
+across more than one root directory. `lfrRepo` (short alias `lfrr`) jumps between
+clones without typing full paths; `lfrWorktree` (short alias `lfrw`) spins up a
+new worktree off `upstream/master`.
 
 Both load via the top-level `lfrTools.sh` aggregator (see the repo's top-level
 README). They are shell functions, so they must be sourced, not executed: a

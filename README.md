@@ -15,16 +15,19 @@ Open a new shell, then run `lfrTools` to list the available commands.
 
 ## Tools
 
-| Command | What it does | Folder |
-| --- | --- | --- |
-| `lfrRepo` | Jump between Liferay repos with a picker | `LfrRepo/` |
-| `lfrWorktree` | Create a git worktree off a base ref | `LfrRepo/` |
-| `lfrCache` | Share one Gradle build cache across repos/worktrees: build master once, and the others reuse its compiled modules instead of rebuilding. Toggle it per repo/worktree. | `LfrCache/` |
-| `lfrGitClean` / `lfrGitCleanDry` | Safe `git clean` keeping IDE and per-user props | `LfrGit/` |
-| `lfrGitSync` / `lfrGitSyncEE` | Sync a fork from upstream (optional `[org]`, defaults to your configured fork) | `LfrGit/` |
-| `lfrGitRebase` | Interactive rebase over the last N commits | `LfrGit/` |
-| `lfrRunBundle` | Start a Liferay bundle (`start-liferay.sh`) | `LfrRunBundles/` |
-| `lfrShare` | Point a worktree at a shared, already-built bundle (no rebuild to switch) | `LfrShare/` |
+Every command has a short alias (same function, fewer letters), so `lfrShare`
+and `lfrs` are interchangeable.
+
+| Command | Short | What it does | Folder |
+| --- | --- | --- | --- |
+| `lfrRepo` | `lfrr` | Jump between Liferay repos with a picker | `LfrRepo/` |
+| `lfrWorktree` | `lfrw` | Create a git worktree off a base ref | `LfrRepo/` |
+| `lfrCache` | `lfrc` | Share one Gradle build cache across repos/worktrees: build master once, and the others reuse its compiled modules instead of rebuilding. Bare `lfrCache` shows each repo's state and toggles the one you pick. | `LfrCache/` |
+| `lfrGitClean` / `lfrGitCleanDry` | `lfrgc` / `lfrgcd` | Safe `git clean` keeping IDE and per-user props | `LfrGit/` |
+| `lfrGitSync` / `lfrGitSyncEE` | `lfrgs` / `lfrgse` | Sync a fork from upstream (optional `[org]`, defaults to your configured fork) | `LfrGit/` |
+| `lfrGitRebase` | `lfrgr` | Interactive rebase over the last N commits | `LfrGit/` |
+| `lfrRunBundle` | `lfrrb` | Start a Liferay bundle (`start-liferay.sh`) | `LfrRunBundles/` |
+| `lfrShare` | `lfrs` | Point a worktree at a shared, already-built bundle (no rebuild to switch). Bare `lfrShare` shows each repo's state and toggles the one you pick. | `LfrShare/` |
 
 Each folder has its own README with the details.
 

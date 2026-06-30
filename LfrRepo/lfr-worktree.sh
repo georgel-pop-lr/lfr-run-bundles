@@ -44,3 +44,6 @@ lfrWorktree() {
 
 	cd "${dir}" || return 1
 }
+
+# Short alias.
+lfrw() { lfrWorktree "$@"; }
